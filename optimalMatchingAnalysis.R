@@ -7,27 +7,33 @@ library('RcmdrMisc')
 library('ggplot2')
 
 # Variables
-case_name = 'TMall' # 'Cainiao'
-preprocess_folderpath <- sprintf('%s_preprocessed', case_name)
-output_folderpath <- sprintf('%s_output', case_name)
-produce_date <- '20210622'
+case_name = 'TMall'
+#case_name = 'Cainiao'
+preprocess_folderpath <- sprintf('%s/%s_preprocessed', case_name, case_name)
+output_folderpath <- sprintf('%s/%s_output', case_name, case_name)
+produce_date <- '20210625'
 start_day <- 0
 end_day <- 184
 label <- 'none'
-file_name <- sprintf('%s_V3.2-duration_%s_%s-label_%s', produce_date, start_day, end_day, label)
+sent_day <- 10
 
 # Main
+# Assign case name
 if (case_name == 'TMall') {
+  file_name <- sprintf('%s_V3.2-duration_%s_%s-label_%s', produce_date, start_day, end_day, label)
   data <- read.csv(sprintf('%s/TMall_user_state_sequence_table_%s.csv', preprocess_folderpath, file_name))
+  colorset <- c("gray", "forestgreen", "darkorange3", "green", "gold", "white")
 } else {
+  file_name <- sprintf('%s-sentday_%s', produce_date, sent_day)
   data <- read.csv(sprintf('%s/order_logistic_states-%s.csv', preprocess_folderpath, file_name))
+  colorset <- c("white","aquamarine3","azure1","azure2","dodgerblue1","aquamarine1","azure3","aquamarine4","green","green3")
 }
 
 # Check if missing values exist
 data[is.na(data)]
 
-# Sequence Formatting
-data.seq <- seqdef(data, 2:8, xtstep=6)
+# Sequence Formatting (!! Need to adjust the range x:xxx)
+data.seq <- seqdef(data, 2:184, xtstep=6)
 
 # Transition rates between states
 data.trate <- round(seqtrate(data.seq, time.varying = FALSE), 2)
@@ -73,7 +79,7 @@ data.om <- seqdist(data.seq, method = 'TWED', nu = 0.5, sm = 'INDELSLOG')
 # output - dissimilarity matrix
 write.csv(data.om, 
           sprintf('%s/dissimilarity_matrix-%s-seqdist_%s-sm_%s-indel_%s.csv', 
-                  preprocess_folderpath, file_name, 'OM', 'TRATE', 'auto'), 
+                  preprocess_folderpath, file_name, 'OMstran', 'TRATE', 'auto'), 
           row.names = FALSE)
 
 
@@ -95,8 +101,8 @@ cluster.result <- cutree(clusterward, k=8)
 cluster.label.hcut <- factor(cluster.result, labels = paste("Cluster"), 1:8)
 
 # Clustering: K-means
-cluster.result <- kmeans(euclidean_distance, centers = 8)$cluster
-cluster.label.kmeans <- factor(cluster.result, labels = paste("Cluster"), 1:8)
+cluster.result <- kmeans(data.om, centers = 2)$cluster
+cluster.label.kmeans <- factor(cluster.result, labels = paste("Cluster"), 1:2)
 
 # output - cluster labels add back to user state sequences data
 data$hcut_cluster <- cluster.label.hcut
@@ -107,7 +113,7 @@ euclidean_distance$hcut_cluster <- cluster.label.hcut
 euclidean_distance$kmeans_cluster <- cluster.label.kmeans
 write.csv(data, 
           sprintf('%s/clustered-%s-seqdist_%s-sm_%s-indel_%s-method_%s-center_%s.csv',
-                  output_folderpath, file_name, 'OM', 'TRATE', 'auto', 'kmeans', '8'), 
+                  output_folderpath, file_name, 'OMspell', 'TRATE', 'auto', 'kmeans', '2'), 
           row.names = FALSE)
 write.csv(action_counts, 
           sprintf('%s/clustered-%s-seqdist_%s-method_%s-center_%s.csv',
@@ -119,13 +125,12 @@ write.csv(euclidean_distance,
           row.names = FALSE)
 
 # Plots
-plot_name <- sprintf('%s/cluster_distribution-%s-seqdist_%s-sm_%s-indel_%s-method_%s-center_%s.jpg', 
-                     output_folderpath, file_name, 'OM', 'TRATE', 'auto', 'kmeans', '8')
+plot_name <- sprintf('%s/cluster_distribution-%s-seqdist_%s-sm_%s-indel_%s-method_%s-center_%s', 
+                     output_folderpath, file_name, 'OMspell', 'TRATE', 'auto', 'kmeans', '2')
 plot_name
 
-colorset <- c("gray", "forestgreen", "darkorange3", "green", "gold", "white")
 # State distribution plot
-seqdplot(data.seq, group = cluster.label.hcut, border=NA, cpal=colorset)
+seqdplot(data.seq, group = cluster.label.kmeans, border=NA, cpal=colorset)
 seqfplot(data.seq, group = cluster.label.hcut, border=NA, cpal=colorset)
 seqiplot(data.seq, group = cluster.label.hcut, border=NA, cpal=colorset)
 seqIplot(data.seq, group = cluster.label.hcut, border=NA, cpal=colorset)

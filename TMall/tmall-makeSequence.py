@@ -9,9 +9,12 @@ from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
 
+"""
+
+"""
 
 # Variable
-input_folderpath = 'TMall_datasets/'
+input_folderpath = 'TMall_dataset/'
 folderpath = 'TMall_preprocessed/'
 tmall_log_filepath = 'TMall_for_user_states_define_transformed.pkl'
 parser = argparse.ArgumentParser()

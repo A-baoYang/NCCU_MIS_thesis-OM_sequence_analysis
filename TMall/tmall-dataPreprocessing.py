@@ -13,13 +13,13 @@ warnings.filterwarnings('ignore')
         - 缺失值處理
         - 新增事件及時間欄位方便後續生成序列使用
     Output:  
-        - Output Path: `Tmall_preprocessed/`
+        - Output Path: `Tmall_dataset/`
         - TMall_for_user_states_define_transformed.pkl
 """
 
 
 # Variables
-rawdata_folderpath = 'TMall_datasets/'
+rawdata_folderpath = 'TMall_dataset/'
 userinfo_filepath = 'user_info_format1.csv'
 userlog_filepath = 'user_log_format1.csv'
 

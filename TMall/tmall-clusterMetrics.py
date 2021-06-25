@@ -1,19 +1,15 @@
-from collections import defaultdict, Counter
+from collections import Counter
 import datetime as dt
-import gc
 import argparse
-import json
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pathlib
-import plotly.express as px
 import seaborn as sns
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_samples, silhouette_score
+from sklearn.metrics import silhouette_score
 from scipy import stats
-from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -210,7 +206,7 @@ else:
     clusteredSeqs = clusteredSeqs[['user_id', f'{cluster_method}_cluster']]
     print(clusteredSeqs.shape)
     print(clusteredSeqs.head())
-    sampledWebLog = pd.read_csv(input_folderpath + f'Tmall-sampledData_agerange-{file_name}-seqdist_{OM_version}.csv')
+    sampledWebLog = pd.read_csv(input_folderpath + f'Tmall-sampledData_agerange-{file_name}.csv')
     print(sampledWebLog.shape)
     print(sampledWebLog.head())
 
@@ -221,7 +217,7 @@ else:
     action_counts_cluster_perc.to_csv(output_folderpath + f'cluster_transition-action_counts-{file_name}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}-method_{cluster_method}-center_{center}.csv', index=False)
     euclidean_distance_cluster_perc.to_csv(output_folderpath + f'cluster_transition-euclidean_distance-{file_name}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}-method_{cluster_method}-center_{center}.csv', index=False)
 
-    # 計算每位用戶的指標
+    # 計算每位用戶的指標，並與分群結果合併
     df_by_user = compute_user_metrics(df=sampledWebLog, clustered_df=clusteredSeqs)
     print(df_by_user)
     # 計算分群前的總體指標平均、標準差與中位數
@@ -232,17 +228,11 @@ else:
     gender_perc['proportion'] = round(gender_perc['proportion'] / gender_perc['proportion'].sum() * 100, 3)
     gender_perc.to_csv(output_folderpath + f'origin_metrics_gender-{file_name}.csv', index=False)
     print(gender_perc)
-    fig = px.pie(data_frame=gender_perc, values='proportion', names='性別',
-                     title=f'性別佔比', width=500, height=500)
-    fig.show()
     # 計算分群前的年齡層佔比
     age_perc = df_by_user.groupby(['年齡層'])['user_id'].count().reset_index().rename(columns={'user_id': 'proportion'})
     age_perc['proportion'] = round(age_perc['proportion'] / age_perc['proportion'].sum() * 100, 3)
     age_perc.to_csv(output_folderpath + f'origin_metrics_age-{file_name}.csv', index=False)
     print(age_perc)
-    fig = px.bar(data_frame=age_perc, x='年齡層', y='proportion', barmode='overlay',
-                 title='年齡層佔比', width=700, height=500)
-    fig.show()
 
     # ---
     # 再根據各群算出各指標的平均、標準差與中位數

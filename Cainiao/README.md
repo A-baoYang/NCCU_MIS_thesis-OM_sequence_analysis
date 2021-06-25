@@ -1,2 +1,12 @@
-# NCCU_MIS_thesis-OM_sequence_analysis
-code and pre-processed datasets used in my master degree thesis Optimal Matching &amp; Sequence Clustering:
+# Cainiao - Logistics States Sequences Analysis
+
+### Objective
+
+### Process
+1. `makeSequence.py`
+2. `clusterMetrics.py`
+
+### Analysis Result
+
+### Source
+Chapter 5 of the thesis.

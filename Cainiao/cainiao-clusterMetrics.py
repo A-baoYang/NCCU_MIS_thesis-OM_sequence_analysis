@@ -15,7 +15,22 @@ warnings.filterwarnings('ignore')
 
 
 """
+    Input:
+        - Input Path: `Cainiao_preprocessed/` `Cainiao_output/`
+        - 備用的抽樣用戶紀錄: `Cainiao-sampledData_reviewscore-{produce_date}-sentday_{sent_day}.csv`
+        - 已標記分群標籤的用戶序列表: `clustered-{produce_date}-sentday_{sent_day}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}-method_{cluster_method}-center_{center}.csv`
+    Process:
+        - 最佳群數搜尋 (optional)
+        - 計算分群結果移轉比例 (optional)
+    Output:
+        - Output Path: `Cainiao_output/`
+        - Average Silhouette Score Plot: 分群群數側影係數關係圖 (optional)
+        - 分群結果移轉比例列聯表 (optional)
+        - 分群前各項統計指標
+        - 分群後各群各項統計指標
+        - 各群之間統計顯著性
 """
+
 
 # Variables
 input_folderpath = 'Cainiao_preprocessed/'
@@ -138,10 +153,17 @@ def compute_cluster_metrics(df):
 
 
 def compute_kruskal_wallis_test(df, metric, cluster_num):
-    origin = df[metric].values
+    print(f'Kruskal-Wallis Significance Test: {metric}\n')
+    origin_metric = df[metric].values
+    # 各群和分群前的原始樣本比
     for cid in range(1, cluster_num + 1):
-        comp_ = df[df['om_cluster'] == f'Cluster{cid}'][metric].values
-        print(f'Kruskal-Wallis Significance Test: {metric}\nOrigin  v.s.  Cluster{cid}\n{stats.kruskal(origin, comp_)}')
+        cid_metric = df[df['om_cluster'] == f'Cluster{cid}'][metric].values
+        print(f'Origin  v.s.  Cluster{cid}\n{stats.kruskal(origin_metric, cid_metric)}\n')
+
+        # 各群和其他群樣本比
+        for cid_comp in range(cid + 1, cluster_num + 1):
+            cid_comp_metric = df[df['om_cluster'] == f'Cluster{cid_comp}'][metric].values
+            print(f'Cluster{cid}  v.s.  Cluster{cid_comp}\n{stats.kruskal(cid_metric, cid_comp_metric)}')
 
 
 
@@ -197,6 +219,7 @@ else:
                            index=False)
 
     # 計算兩樣本特徵分布顯著性
-    for metric in ['Logistics_review_score', 'pay_day', 'receice_day']:
-        compute_kruskal_wallis_test(df=sampledOrderLog, metric=metric, cluster_num=2)
+    metrics_to_compare = ['Logistics_review_score', 'pay_day', 'receice_day']
+    for metric in metrics_to_compare:
+        compute_kruskal_wallis_test(df=sampledOrderLog, metric=metric, cluster_num=center)
 

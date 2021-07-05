@@ -10,7 +10,15 @@ import warnings
 warnings.filterwarnings('ignore')
 
 """
-
+    Input:
+        - Input Path: `Tmall_dataset/`
+        - `TMall_for_user_states_define_transformed.pkl`
+    Process:
+        - 序列狀態定義
+        - 從日誌格式轉換為狀態序列
+    Output:
+        - Output Path: `TMall_preprocessed/`
+        - 用戶狀態序列矩陣: `TMall_user_state_sequence_table_{product_date}_{version}.csv`
 """
 
 # Variable
@@ -28,6 +36,7 @@ start_day = args.start_day
 end_day = args.end_day
 label = args.label
 version = f'V3.2-duration_{start_day}_{end_day}-label_{label}'
+output_filepath = f'TMall_user_state_sequence_table_{produce_date}_{version}.csv'
 
 
 # Function
@@ -92,11 +101,11 @@ def user_daily_state_tolist(user_list):
 
 
 # Main
-# Create folder for store output datasets if the folder hasn't been built
+# 若本地端沒有該資料夾則則創建
 path = pathlib.Path(folderpath)
 path.mkdir(parents=True, exist_ok=True)
 
-# Load dataset
+# 載入資料集
 df = pd.read_pickle(input_folderpath + tmall_log_filepath)
 # 排除 11/12 的少量流量，統一將雙 11 當天作為最後一天
 df = df[df['time_stamp']<=1111]
@@ -117,38 +126,36 @@ print(sampled_user_with_agerange.head())
 user_list = sampled_user_with_agerange.user_id.unique()
 sampled_df = df[df['user_id'].isin(user_list)].sort_values('day_stamp').reset_index()
 sampled_df = sampled_df.drop(['index'], axis=1)
-sampled_df.to_csv(folderpath + f'Tmall-sampledData_agerange-{produce_date}-{version}.csv', index=False)
+# 儲存抽樣後用戶備用
+sampled_df.to_csv(folderpath + f'Tmall-sampledData_agerange-{produce_date}_{version}.csv', index=False)
 
-# Filter only the web log of sampled user
+# 僅篩選抽樣用戶行為紀錄使用
 sampled_df = sampled_df[(sampled_df['day_stamp'] >= start_day) & (sampled_df['day_stamp'] <= end_day)]
 
-# Generate dictionary of user behavior records
+# 以字典儲存抽樣用戶的每日各項行為次數
 accum_by_timestamp = user_daily_behavior_todict(user_list=user_list, sampled_df=sampled_df, start_day=start_day, end_day=end_day)
-
-# Store the user behaviors dictionary
 with open(folderpath + 'TMall_user_counts_{}_{}.json'.format(produce_date, version), 'w') as fp:
     json.dump(accum_by_timestamp, fp)
 
-# Load the user behaviors dictionary
+# 測試能否順利載入
 with open(folderpath + 'TMall_user_counts_{}_{}.json'.format(produce_date, version), 'r') as f:
     tmall_user_count_stats = json.load(f)
-
 print(tmall_user_count_stats.keys())
 
-# Transform to user daily state
+# 將字典中所有抽樣用戶每日各項行為次數，轉換為狀態序列矩陣
 user_daily_states = user_daily_state_tolist(user_list=list(tmall_user_count_stats.keys()))
 
-# Store user daily states table as csv
+# 儲存用戶狀態序列為 .csv
 print(produce_date, version)
 columns = ['user_id'] + ['day_' + str(x) for x in range(start_day, end_day + 1)]
 user_states_table = pd.DataFrame(user_daily_states, columns=columns)
-user_states_table.to_csv(folderpath + 'TMall_user_state_sequence_table_{}_{}.csv'.format(produce_date, version), index=False)
+user_states_table.to_csv(folderpath + output_filepath, index=False)
 print(user_states_table.head())
 
-# Show state distribution
+# 檢視用戶狀態分布比例
 states_count_dict = dict(Counter(user_states_table.iloc[:, 1:user_states_table.shape[1]].values.reshape(-1).tolist()))
 states_count_df = pd.DataFrame([list(states_count_dict.keys()), list(states_count_dict.values())]).T
 states_count_df.columns = ['action', 'count']
-states_count_df.to_csv(folderpath + 'TMall_user_state-count_{}_{}.csv'.format(produce_date, version), index=False)
+states_count_df.to_csv(folderpath + f'TMall_user_state-count_{produce_date}_{version}.csv', index=False)
 print(states_count_df)
 

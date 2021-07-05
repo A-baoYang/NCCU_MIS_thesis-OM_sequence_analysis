@@ -7,14 +7,14 @@ warnings.filterwarnings('ignore')
 
 """
     Input:
-        - data_format1/user_info_format1.csv
-        - data_format1/user_log_format1.csv
+        - `data_format1/user_info_format1.csv`
+        - `data_format1/user_log_format1.csv`
     Process:
         - 缺失值處理
         - 新增事件及時間欄位方便後續生成序列使用
     Output:  
         - Output Path: `Tmall_dataset/`
-        - TMall_for_user_states_define_transformed.pkl
+        - `TMall_for_user_states_define_transformed.pkl`
 """
 
 
@@ -40,26 +40,27 @@ def generate_time_features(df, time_col):
 
 # Main
 
-# Load datasets
+# 載入資料集
 fm1_user = pd.read_csv(rawdata_folderpath + 'data_format1/' + userinfo_filepath)
 fm1_userLog = pd.read_csv(rawdata_folderpath + 'data_format1/' + userlog_filepath)
 fm1_userLog.rename(columns={'seller_id': 'merchant_id'}, inplace=True)
 df = pd.merge(fm1_userLog, fm1_user, on=['user_id'], how='left')
 df.isnull().sum()  # brand_id, age_range, gender 有缺值
 
-# Missing values preprocessing
+# 處理缺失值: brand_id, age_range, gender，皆為類別型屬性，以眾數補之
 for col in ['brand_id', 'age_range', 'gender']:
     df['brand_id'] = df[col].fillna(df[col].mode())
 df.isnull().sum()  # 確認無缺值
 
-# Features transformation
+# 特徵轉換: 將行為類別欄位分開成各自欄位
 action_list = ['click', 'add_to_cart', 'purchase', 'add_to_favorite']
 dummy_actionType = pd.get_dummies(df['action_type'])
 dummy_actionType.columns = action_list
 df = pd.concat([df, dummy_actionType], axis=1)
 df.drop(['action_type'], axis=1, inplace=True)
+# 特徵轉換: 將日期轉換成天數編號/月份/星期幾/小時等
 df = generate_time_features(df=df, time_col='time_stamp')
 
-# Save the preprocessed dataset
+# 儲存前處理後資料
 df.to_pickle(rawdata_folderpath + 'TMall_for_user_states_define_transformed.pkl')
 

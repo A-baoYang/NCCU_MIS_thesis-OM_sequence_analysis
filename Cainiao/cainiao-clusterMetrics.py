@@ -22,6 +22,8 @@ warnings.filterwarnings('ignore')
     Process:
         - 最佳群數搜尋 (optional)
         - 計算分群結果移轉比例 (optional)
+        - 分群前後各項指標統計
+        - 顯著性檢定
     Output:
         - Output Path: `Cainiao_output/`
         - Average Silhouette Score Plot: 分群群數側影係數關係圖 (optional)

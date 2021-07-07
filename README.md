@@ -3,7 +3,7 @@
 - 論文名稱: `最佳匹配法與序列分群: 電商用戶行為與運輸物流的分析`
 
 ### Thesis Advisors and Oral Examination Committee
-- [Dr. Hao-Chun Chou]
+- [Dr. Hao-Chun Chuang]
     > - Dept: Department of Management Information Systems, National Chengchi University
     > 
     > - Contacts: chuang@nccu.edu.tw

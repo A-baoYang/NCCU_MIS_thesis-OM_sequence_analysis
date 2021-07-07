@@ -150,7 +150,7 @@ If you're interested in the project, and need folder permission, please contact 
 
 <!-- superlink reference -->
 
-[Dr. Hao-Chun Chou]: https://mis2.nccu.edu.tw/en/Faculty/Faculty_01/%E8%8E%8A-%E7%9A%93%E9%88%9E-68290166
+[Dr. Hao-Chun Chuang]: https://mis2.nccu.edu.tw/en/Faculty/Faculty_01/%E8%8E%8A-%E7%9A%93%E9%88%9E-68290166
 [Dr. Yen-Chun Chou]: https://mis2.nccu.edu.tw/en/Faculty/Faculty_01/YEN-CHUN-CHOU-53848898
 [Dr. Shun-Wen Hsiao]: https://mis2.nccu.edu.tw/en/Faculty/Faculty_01/Shun-Wen-Hsiao-19738494
 [Dr. Chin-Sheng Yang]: https://www.mis.yzu.edu.tw/teacher_profile.aspx?lang=cht&pid=1075&tchid=022&leng=en

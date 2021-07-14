@@ -1,64 +1,74 @@
 from collections import Counter
 import datetime as dt
-import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import pathlib
+from scipy import stats
 import seaborn as sns
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
-from scipy import stats
-import warnings
-warnings.filterwarnings('ignore')
+from tqdm import tqdm
 
 
-"""
-    Input:
-        - Input Path: `Cainiao_preprocessed/` `Cainiao_output/`
-        - 備用的抽樣用戶紀錄: `Cainiao-sampledData_reviewscore-{produce_date}-sentday_{sent_day}.csv`
-        - 已標記分群標籤的用戶序列表: `clustered-{produce_date}-sentday_{sent_day}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}-method_{cluster_method}-center_{center}.csv`
-    Process:
-        - 最佳群數搜尋 (optional)
-        - 計算分群結果移轉比例 (optional)
-        - 分群前後各項指標統計
-        - 顯著性檢定
-    Output:
-        - Output Path: `Cainiao_output/`
-        - Average Silhouette Score Plot: 分群群數側影係數關係圖 (optional)
-        - 分群結果移轉比例列聯表 (optional)
-        - 分群前各項統計指標
-        - 分群後各群各項統計指標
-        - 各群之間統計顯著性
-"""
+def compute_sent_days(df):
+
+    sent_times = list()
+    for oid in tqdm(df.order_id.unique()):
+        tmp = df[df['order_id'] == oid].sort_values(['timestamp'])
+        try:
+            end_time = tmp[tmp['action'] == 'SIGNED'].timestamp.values[-1]
+        except:
+            pass
+        start_time = tmp.pay_timestamp.values[0]
+        duration = dt.datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S') - dt.datetime.strptime(start_time,
+                                                                                              '%Y-%m-%d %H:%M:%S')
+        sent_times.append([oid, start_time, end_time, duration.days])
+
+    df_sent_times = pd.DataFrame(sent_times, columns=['order_id', 'start_time', 'end_time', 'sent_duration'])
+    print(df_sent_times[df_sent_times['sent_duration'] < 0])
+    df_sent_times = df_sent_times[df_sent_times['sent_duration'] >= 0]
+    df_sent_times['sent_duration'] = np.where(df_sent_times['sent_duration'] >= 10, '10+',
+                                              df_sent_times['sent_duration'])
+    df_sent_times['sent_duration'] = df_sent_times['sent_duration'].astype(str)
+
+    return df_sent_times
 
 
-# Variables
-preprocessed_folderpath = 'Cainiao_preprocessed/'
-output_folderpath = 'Cainiao_output/'
-parser = argparse.ArgumentParser()
-parser.add_argument('--produce_date', type=str, default=str(dt.date.today()).replace('-', ''))
-parser.add_argument('--check_best_centers', type=bool, default=False)
-parser.add_argument('--cluster_method', type=str, default='hcut')
-parser.add_argument('--center', type=int, default=2)
-parser.add_argument('--OM_version', type=str, default='OM')
-parser.add_argument('--sm_method', type=str, default='TRATE')
-parser.add_argument('--indel_method', type=str, default='auto')
-parser.add_argument('--sent_day', type=int, default=10)
-args = parser.parse_args()
-produce_date = args.produce_date
-sent_day = args.sent_day
-check_best_centers = args.check_best_centers
-cluster_method = args.cluster_method
-center = args.center
-OM_version = args.OM_version
-sm_method = args.sm_method
-indel_method = args.indel_method
-file_name = f'{produce_date}-sentday_{sent_day}'
+def generate_logistic_state_sequence(df, order_id_list):
+
+    actions_collect = list()
+    reviews_collect = list()
+    for oid in tqdm(order_id_list):
+
+        tmp = df[df['order_id'] == oid].sort_values('timestamp')
+        # 付款時間為訂單成立時間 (ORDERED)
+        order_time = tmp.pay_timestamp.values[0]
+        reviewscore = tmp.Logistics_review_score.values[0]
+        actions = ['ORDERED'] + tmp.action.values.tolist()
+        # 計算狀態間的間隔秒數，以總秒數長度計算佔比，最後用 100 份分給各狀態長度，無條件進位，因此會有總長度大於 100 的情況
+        timestamps = np.array(
+            [dt.datetime.strptime(order_time, '%Y-%m-%d %H:%M:%S')] + [dt.datetime.strptime(x, '%Y-%m-%d %H:%M:%S') for x in tmp.timestamp.values])
+        gaps = timestamps[1:] - timestamps[:-1]
+        gaps = [x.total_seconds() for x in gaps]
+        gaps_percent = np.array([x / sum(gaps) for x in gaps])
+        gaps = [int(round(x * 100)) for x in gaps_percent]
+
+        # 將每位用戶的狀態拼接起來
+        actions_list = [oid]
+        # 該位用戶第幾個狀態、要重複的次數
+        for i in range(0, len(gaps)):
+            actions_list += [actions[i]] * gaps[i]
+
+        # 最後一個動作統一只出現一次
+        actions_list.append(actions[-1])
+
+        actions_collect.append(actions_list)
+        reviews_collect.append(f'reviewscore_{reviewscore}')
+
+    return actions_collect, reviews_collect
 
 
-# Function
 def silhouette_plot(file_name, OM_version, sm_method, indel_method, cluster_method, max_cluster=8):
 
     dis_matrix = pd.read_csv(f'dissimilarity_matrix-{file_name}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}.csv')
@@ -166,61 +176,4 @@ def compute_kruskal_wallis_test(df, metric, cluster_num):
             cid_comp_metric = df[df['om_cluster'] == f'Cluster{cid_comp}'][metric].values
             print(f'Cluster{cid}  v.s.  Cluster{cid_comp}\n{stats.kruskal(cid_metric, cid_comp_metric)}')
 
-
-
-# Main
-# Create folder for store output datasets if the folder hasn't been built
-path = pathlib.Path(output_folderpath)
-path.mkdir(parents=True, exist_ok=True)
-
-if check_best_centers:
-
-    cluster_methods = ['hcut', 'kmeans']
-    OM_versions = ['OM', 'OMloc', 'OMslen', 'OMspell', 'OMstran']
-
-    print('Start checking for best cluster center number...')
-    for cluster_method in cluster_methods:
-        for OM_version in OM_versions:
-            silhouette_plot(file_name=file_name, OM_version=OM_version, sm_method=sm_method, indel_method=indel_method,
-                            cluster_method=cluster_method, max_cluster=8)
-
-else:
-    print('Start generating cluster metrics...')
-
-    clusteredSeqs = pd.read_csv(output_folderpath + f'clustered-{file_name}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}-method_{cluster_method}-center_{center}.csv')
-    clusteredSeqs = clusteredSeqs[['order_id', f'{cluster_method}_cluster']]
-    print(clusteredSeqs.shape)
-    print(clusteredSeqs.head())
-    sampledOrderLog = pd.read_csv(preprocessed_folderpath + f'Cainiao-sampledData_reviewscore-{file_name}.csv')
-    sampledOrderLog = sampledOrderLog.drop(['order_date', 'logistic_order_id', 'action', 'facility_id', 'facility_type',
-                                            'city_id', 'logistic_company_id', 'timestamp', 'sent_duration'], axis=1)
-    sampledOrderLog = sampledOrderLog[sampledOrderLog['order_id'].isin(clusteredSeqs.order_id.unique())]
-    sampledOrderLog['promise_speed'] = sampledOrderLog['promise_speed'].fillna(0.0)
-    sampledOrderLog['end_time'] = pd.to_datetime(sampledOrderLog['end_time'])
-    sampledOrderLog['start_time'] = pd.to_datetime(sampledOrderLog['start_time'])
-
-    assign_cols = ['pay_timestamp', 'end_time']
-    generate_cols = ['pay', 'receive']
-    sampledOrderLog = generate_time_features(df=sampledOrderLog, assign_cols=assign_cols, generate_cols=generate_cols)
-    print(sampledOrderLog.shape)
-    print(sampledOrderLog.head())
-
-    # 計算分群前的總體指標平均、標準差與中位數
-    sampledOrderLog = pd.merge(sampledOrderLog, clusteredSeqs, on='order_id', how='left')
-    sampledOrderLog = sampledOrderLog.rename(columns={f'{cluster_method}_cluster': 'om_cluster'})
-    print(sampledOrderLog)
-    origin_metrics = compute_origin_metrics(sampledOrderLog)
-    origin_metrics.to_csv(output_folderpath + f'origin_metrics-{file_name}.csv', index=False)
-
-    # ---
-    # 再根據各群算出各指標的平均、標準差與中位數
-    cluster_metrics = compute_cluster_metrics(sampledOrderLog)
-    print(cluster_metrics)
-    cluster_metrics.to_csv(output_folderpath + f'cluster_metrics-{file_name}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}-method_{cluster_method}-center_{center}.csv',
-                           index=False)
-
-    # 計算兩樣本特徵分布顯著性
-    metrics_to_compare = ['Logistics_review_score', 'pay_day', 'receive_day']
-    for metric in metrics_to_compare:
-        compute_kruskal_wallis_test(df=sampledOrderLog, metric=metric, cluster_num=center)
 

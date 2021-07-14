@@ -1,70 +1,87 @@
-from collections import Counter
+from collections import Counter, OrderedDict
 import datetime as dt
-import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import pathlib
+from scipy import stats
 import seaborn as sns
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
-from scipy import stats
-import warnings
-warnings.filterwarnings('ignore')
+from tqdm import tqdm
 
 
-"""
-    Input:
-        - Input Path: `TMall_preprocessed/` `TMall_output/`
-        - 備用的抽樣用戶紀錄: `Tmall-sampledData_agerange-{produce_date}_V3.2-duration_{start_day}_{end_day}-label_{label}.csv`
-        - 已標記分群標籤的用戶序列表: `clustered-{produce_date}_V3.2-duration_{start_day}_{end_day}-label_{label}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}-method_{cluster_method}-center_{center}.csv`
-    Process:
-        - 最佳群數搜尋 (optional)
-        - 計算分群結果移轉比例 (optional)
-        - 分群前後各項指標統計
-        - 顯著性檢定
-    Output:
-        - Output Path: `TMall_output/`
-        - Average Silhouette Score Plot: 分群群數側影係數關係圖 (optional)
-        - 分群結果移轉比例列聯表 (optional)
-        - 分群前各項統計指標
-        - 分群後各群各項統計指標
-        - 各群之間統計顯著性
-"""
+def user_daily_behavior_todict(user_list, sampled_df, start_day, end_day):
+    """
+    Generate dictionary to record user daily behavior
+    :param user_list:
+    :param sampled_df:
+    :param start_day:
+    :param end_day:
+    :return:
+    """
+
+    accum_by_timestamp = {}
+
+    for uid in tqdm(user_list):
+        accum_by_timestamp[str(uid)] = {}
+
+        tmp_df = sampled_df[sampled_df['user_id'] == uid].groupby(['day_stamp'])[
+            'click', 'add_to_cart', 'add_to_favorite', 'purchase'].sum().reset_index()
+        tmp_df['add_to_favor_or_cart'] = tmp_df['add_to_favorite'] + tmp_df['add_to_cart']
+        tmp_df = tmp_df.drop(['add_to_favorite', 'add_to_cart'], axis=1)
+        tmp_df['unique_cat'] = sampled_df[sampled_df['user_id'] == uid].groupby(['day_stamp'])['cat_id'].nunique()
+
+        for i in range(start_day, end_day + 1):
+            if i not in tmp_df.day_stamp.values:
+                tmp_df = pd.concat([tmp_df, pd.DataFrame([[i, 0, 0, 0, 0]], columns=tmp_df.columns)], ignore_index=True)
+
+        tmp_df = tmp_df.sort_values('day_stamp').reset_index().drop(['index'], axis=1)
+
+        for c in tmp_df.columns:
+            accum_by_timestamp[str(uid)][c] = tmp_df[c].values.tolist()
+
+    return accum_by_timestamp
 
 
-# Variables
-preprocessed_folderpath = 'TMall_preprocessed/'
-output_folderpath = 'TMall_output/'
-parser = argparse.ArgumentParser()
-parser.add_argument('--produce_date', type=str, default=str(dt.date.today()).replace('-', ''))
-parser.add_argument('--start_day', type=int, default=0)
-parser.add_argument('--end_day', type=int, default=184)
-parser.add_argument('--label', type=str, default='none')
-parser.add_argument('--check_best_centers', type=bool, default=False)  # 是否要進行最佳群數搜尋
-parser.add_argument('--check_cluster_transition', type=bool, default=False)  # 是否要進行計算分群結果移轉比例
-parser.add_argument('--cluster_method', type=str, default='hcut')
-parser.add_argument('--center', type=int, default=2)
-parser.add_argument('--OM_version', type=str, default='OM')
-parser.add_argument('--sm_method', type=str, default='TRATE')
-parser.add_argument('--indel_method', type=str, default='auto')
-args = parser.parse_args()
-produce_date = args.produce_date
-start_day = args.start_day
-end_day = args.end_day
-label = args.label
-check_best_centers = args.check_best_centers
-check_cluster_transition = args.check_cluster_transition
-cluster_method = args.cluster_method
-center = args.center
-OM_version = args.OM_version
-sm_method = args.sm_method
-indel_method = args.indel_method
-file_name = f'{produce_date}_V3.2-duration_{start_day}_{end_day}-label_{label}'
+def user_daily_state_tolist(user_action_dict):
+    collect = []
+    user_list = list(user_action_dict.keys())
+    for uid in tqdm(user_list):
+        tmp_df = pd.DataFrame(user_action_dict[uid])
+
+        cond_list = [
+            (tmp_df['click'] + tmp_df['purchase'] + tmp_df['add_to_favor_or_cart'] + tmp_df['unique_cat'] == 0),
+            (tmp_df['click'] == 0) & (tmp_df['purchase'] > 0),
+            (tmp_df['click'] == 0) & (tmp_df['add_to_favor_or_cart'] > 0),
+            (tmp_df['click'] > 0) & (tmp_df['purchase'] > 0),
+            (tmp_df['click'] > 0) & (tmp_df['add_to_favor_or_cart'] > 0),
+            (tmp_df['click'] > 0) & (tmp_df['add_to_favor_or_cart'] + tmp_df['purchase'] == 0)
+        ]
+        choice_list = [
+            'no_browse', 'directly_purchase', 'directly_add_to_consider', 'browse_to_purchase',
+            'browse_to_add_to_consider', 'browse'
+        ]
+        tmp_df['user_state'] = np.select(condlist=cond_list, choicelist=choice_list, default='')
+
+        uss = tmp_df.user_state.values.tolist()
+        uss.insert(0, uid)
+        collect.append(uss)
+
+    return collect
 
 
-# Function
+def count_action_num(row):
+    action_types = ['browse', 'directly_add_to_consider', 'no_browse', 'browse_to_add_to_consider', 'browse_to_purchase', 'directly_purchase']
+    dict_tmp = dict(Counter(row))
+    for k in action_types:
+        if k not in dict_tmp.keys():
+            dict_tmp[k] = 0
+            
+    dict_tmp = dict(OrderedDict(sorted(dict_tmp.items())))
+    return dict_tmp
+
+
 def silhouette_plot(file_name, OM_version, sm_method, indel_method, cluster_method, max_cluster=8):
     """
     遍歷各個群數，比較側影係數，對標出最佳建議群數
@@ -215,79 +232,4 @@ def compute_kruskal_wallis_test(df, metric, cluster_num):
             cid_comp_metric = df[df['om_cluster'] == f'Cluster{cid_comp}'][metric].values
             print(f'Cluster{cid}  v.s.  Cluster{cid_comp}\n{stats.kruskal(cid_metric, cid_comp_metric)}')
 
-
-# Main
-# Create folder for store output datasets if the folder hasn't been built
-path = pathlib.Path(output_folderpath)
-path.mkdir(parents=True, exist_ok=True)
-
-if check_best_centers:
-    # 若 command line 參數指定 True，則只進行最佳群數搜尋；False 則跳過最佳群數搜尋
-    cluster_methods = ['hcut', 'kmeans']
-    OM_versions = ['OM', 'OMloc', 'OMslen', 'OMspell', 'OMstran']
-
-    print('Start checking for best cluster center number...')
-    for cluster_method in cluster_methods:
-        for OM_version in OM_versions:
-            silhouette_plot(file_name=file_name, OM_version=OM_version, sm_method=sm_method, indel_method=indel_method,
-                            cluster_method=cluster_method, max_cluster=8)
-
-else:
-    print('Start generating cluster metrics...')
-    # 載入抽樣用戶分群後標籤及其行為紀錄
-    clusteredSeqs = pd.read_csv(output_folderpath + f'clustered-{file_name}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}-method_{cluster_method}-center_{center}.csv')
-    clusteredSeqs = clusteredSeqs[['user_id', f'{cluster_method}_cluster']]
-    print(clusteredSeqs.shape)
-    print(clusteredSeqs.head())
-    sampledWebLog = pd.read_csv(preprocessed_folderpath + f'Tmall-sampledData_agerange-{file_name}.csv')
-    print(sampledWebLog.shape)
-    print(sampledWebLog.head())
-
-    if check_cluster_transition:
-        # 計算分群結果移轉情形
-        action_counts_clust = pd.read_csv(output_folderpath + f'clustered-{file_name}-seqdist_action_counts-method_{cluster_method}-center_{center}.csv')
-        action_counts_cluster_perc = cluster_result_transition(clusteredSeqs, action_counts_clust)
-        action_counts_cluster_perc.to_csv(output_folderpath + f'cluster_transition-action_counts-{file_name}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}-method_{cluster_method}-center_{center}.csv', index=True)
-
-    # 計算每位用戶的指標，並與分群結果合併
-    df_by_user = compute_user_metrics(df=sampledWebLog, clustered_df=clusteredSeqs)
-    print(df_by_user)
-    # 計算分群前的總體指標平均、標準差與中位數
-    origin_metrics = compute_origin_metrics(df_by_user)
-    origin_metrics.to_csv(output_folderpath + f'origin_metrics-{file_name}.csv', index=True)
-    # 計算分群前的性別佔比
-    gender_perc = df_by_user.groupby(['性別'])['user_id'].count().reset_index().rename(columns={'user_id': 'proportion'})
-    gender_perc['proportion'] = round(gender_perc['proportion'] / gender_perc['proportion'].sum() * 100, 3)
-    gender_perc.to_csv(output_folderpath + f'origin_metrics_gender-{file_name}.csv', index=True)
-    print(gender_perc)
-    # 計算分群前的年齡層佔比
-    age_perc = df_by_user.groupby(['年齡層'])['user_id'].count().reset_index().rename(columns={'user_id': 'proportion'})
-    age_perc['proportion'] = round(age_perc['proportion'] / age_perc['proportion'].sum() * 100, 3)
-    age_perc.to_csv(output_folderpath + f'origin_metrics_age-{file_name}.csv', index=True)
-    print(age_perc)
-
-    # ---
-
-    # 計算分群後，各群各指標的平均、標準差與中位數
-    cluster_metrics = compute_cluster_metrics(df_by_user)
-    print(cluster_metrics)
-    cluster_metrics.to_csv(output_folderpath + f'cluster_metrics-{file_name}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}-method_{cluster_method}-center_{center}.csv',
-                           index=True)
-    # 計算各群性別佔比表
-    gender_perc = df_by_user.groupby(['om_cluster', '性別'])['user_id'].count().groupby(level=0).apply(lambda x: x / x.sum() * 100).reset_index()
-    gender_perc_pivot = gender_perc.pivot(index='性別', columns='om_cluster', values='user_id').apply(lambda x: round(x, 3))
-    gender_perc_pivot.to_csv(output_folderpath + f'cluster_metrics_gender-{file_name}-seqdist_{OM_version}-sm_{sm_method}-indel_{indel_method}-method_{cluster_method}-center_{center}.csv',
-                             index=True)
-    print(gender_perc_pivot)
-    # 計算各群年齡層佔比表
-    age_perc = df_by_user.groupby(['om_cluster', '年齡層'])['user_id'].count().groupby(level=0).apply(lambda x: x / x.sum() * 100).reset_index()
-    age_perc_pivot = age_perc.pivot(index='年齡層', columns='om_cluster', values='user_id').apply(lambda x: round(x, 3))
-    age_perc_pivot.to_csv(output_folderpath + f'cluster_metrics_age-{file_name}-seqdist_{OM_version}-sm_{sm_method}-indel-{indel_method}-method_{cluster_method}-center_{center}.csv',
-                          index=True)
-    print(age_perc_pivot)
-
-    # 計算兩樣本特徵分布顯著性
-    metrics_to_compare = ['性別', '年齡層', '每人點擊不重複品類數', '每人點擊不重複商家數', '每人點擊不重複品牌數']
-    for metric in metrics_to_compare:
-        compute_kruskal_wallis_test(df=df_by_user, metric=metric, cluster_num=center)
 

@@ -26,8 +26,8 @@ warnings.filterwarnings('ignore')
 
 
 # Variables
-rawdata_folderpath = 'Cainiao_dataset/'
-output_folderpath = 'Cainiao_preprocessed/'
+dataset_folderpath = 'Cainiao_dataset/'
+preprocessed_folderpath = 'Cainiao_preprocessed/'
 order_filepath = 'msom_order_data_1.csv'
 logistic_filepath = 'msom_logistic_detail_1.csv'
 logistic_cols = ['order_id','order_date','logistic_order_id','action','facility_id','facility_type','city_id',
@@ -91,7 +91,7 @@ def generate_logistic_state_sequence(df, order_id_list):
         actions_list = [oid]
         # 該位用戶第幾個狀態、要重複的次數
         for i in range(0, len(gaps)):
-            actions_list += actions[i] * gaps[i]
+            actions_list += [actions[i]] * gaps[i]
 
         # 最後一個動作統一只出現一次
         actions_list.append(actions[-1])
@@ -105,15 +105,15 @@ def generate_logistic_state_sequence(df, order_id_list):
 
 # Mains
 # 若本地端沒有該資料夾則則創建
-path = pathlib.Path(output_folderpath)
+path = pathlib.Path(preprocessed_folderpath)
 path.mkdir(parents=True, exist_ok=True)
 
 # 載入訂單及物流進程資料集
-order = pd.read_csv(rawdata_folderpath + order_filepath, header=None)
+order = pd.read_csv(dataset_folderpath + order_filepath, header=None)
 order.columns = order_cols
 order = order.drop(['day','item_det_info','buyer_id','merchant_id'], axis=1)
 order = order[~order['Logistics_review_score'].isnull()]
-logistic = pd.read_csv(rawdata_folderpath + logistic_filepath, header=None)
+logistic = pd.read_csv(dataset_folderpath + logistic_filepath, header=None)
 logistic.columns = logistic_cols
 
 # 一月份共 1400 多萬筆訂單，從評分 1-5 分各抽樣 3 萬筆訂單，減少運算時間
@@ -133,7 +133,7 @@ logistic = logistic.drop_duplicates()
 print('Shape of logistic: ', logistic.shape)
 print(logistic.head())
 # 儲存備用
-logistic.to_csv(rawdata_folderpath + f'order_logistic_log-{produce_date}.csv', index=False)
+logistic.to_csv(dataset_folderpath + f'order_logistic_log-{produce_date}.csv', index=False)
 
 # 節省空間將不用的訂單資料表刪除
 del order
@@ -143,7 +143,7 @@ gc.collect()
 # 計算每張訂單的運送天數
 df_sent_times = compute_sent_days(df=logistic)
 print(df_sent_times.groupby(['sent_duration']).size().reset_index().rename(columns={0: 'count'}))
-df_sent_times.to_csv(output_folderpath + 'cainiao-sent_times.csv', index=False)
+df_sent_times.to_csv(preprocessed_folderpath + 'cainiao-sent_times.csv', index=False)
 
 # 篩選出運送天數 >10 天的訂單
 sent_duration_10dayup = df_sent_times[df_sent_times['sent_duration']=='10+'].order_id.unique()
@@ -160,7 +160,7 @@ logistic = logistic[logistic['order_id'].isin(sample_oids)]
 
 # 將抽樣後資料連同運送天數一起儲存備用
 logistic = pd.merge(logistic, df_sent_times, on='order_id', how='left')
-logistic.to_csv(output_folderpath + f'Cainiao-sampledData_reviewscore-{file_name}.csv', index=False)
+logistic.to_csv(preprocessed_folderpath + f'Cainiao-sampledData_reviewscore-{file_name}.csv', index=False)
 
 # 計算物流狀態時長佔比，作為序列長度，將每筆訂單轉換為物流狀態序列
 actions_collect, reviews_collect = generate_logistic_state_sequence(df=logistic, order_id_list=sample_oids)
@@ -170,7 +170,7 @@ action_cols = ['action_'+str(x) for x in range(0, pd.DataFrame(actions_collect).
 action_cols = ['order_id'] + action_cols
 order_logistic_states = pd.DataFrame(actions_collect, columns=action_cols)
 order_logistic_states['review_score'] = reviews_collect
-order_logistic_states.to_csv(output_folderpath + f'order_logistic_states-{produce_date}-sentday_{sent_day}.csv', index=False)
+order_logistic_states.to_csv(preprocessed_folderpath + f'order_logistic_states-{produce_date}-sentday_{sent_day}.csv', index=False)
 print(order_logistic_states.groupby(['review_score']).size())
 print(order_logistic_states.shape)
 print(order_logistic_states.head())

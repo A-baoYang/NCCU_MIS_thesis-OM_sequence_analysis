@@ -22,8 +22,8 @@ warnings.filterwarnings('ignore')
 """
 
 # Variable
-input_folderpath = 'TMall_dataset/'
-folderpath = 'TMall_preprocessed/'
+dataset_folderpath = 'TMall_dataset/'
+preprocessed_folderpath = 'TMall_preprocessed/'
 tmall_log_filepath = 'TMall_for_user_states_define_transformed.pkl'
 parser = argparse.ArgumentParser()
 parser.add_argument('--produce_date', type=str, default=str(dt.date.today()).replace('-', ''))
@@ -36,7 +36,8 @@ start_day = args.start_day
 end_day = args.end_day
 label = args.label
 version = f'V3.2-duration_{start_day}_{end_day}-label_{label}'
-output_filepath = f'TMall_user_state_sequence_table_{produce_date}_{version}.csv'
+state_sequence_output_filepath = f'TMall_user_state_sequence_table_{produce_date}_{version}.csv'
+action_count_output_filepath = f'action_counts-{produce_date}_{version}.csv'
 
 
 # Function
@@ -73,10 +74,11 @@ def user_daily_behavior_todict(user_list, sampled_df, start_day, end_day):
     return accum_by_timestamp
 
 
-def user_daily_state_tolist(user_list):
+def user_daily_state_tolist(user_action_dict):
     collect = []
+    user_list = list(user_action_dict.keys())
     for uid in tqdm(user_list):
-        tmp_df = pd.DataFrame(tmall_user_count_stats[uid])
+        tmp_df = pd.DataFrame(user_action_dict[uid])
 
         cond_list = [
             (tmp_df['click'] + tmp_df['purchase'] + tmp_df['add_to_favor_or_cart'] + tmp_df['unique_cat'] == 0),
@@ -99,14 +101,25 @@ def user_daily_state_tolist(user_list):
     return collect
 
 
+def count_action_num(row):
+    action_types = ['browse', 'directly_add_to_consider', 'no_browse', 'browse_to_add_to_consider', 'browse_to_purchase', 'directly_purchase']
+    dict_tmp = dict(collections.Counter(row))
+    for k in action_types:
+        if k not in dict_tmp.keys():
+            dict_tmp[k] = 0
+            
+    dict_tmp = dict(collections.OrderedDict(sorted(dict_tmp.items())))
+    return dict_tmp
+
+
 
 # Main
 # 若本地端沒有該資料夾則則創建
-path = pathlib.Path(folderpath)
+path = pathlib.Path(preprocessed_folderpath)
 path.mkdir(parents=True, exist_ok=True)
 
 # 載入資料集
-df = pd.read_pickle(input_folderpath + tmall_log_filepath)
+df = pd.read_pickle(dataset_folderpath + tmall_log_filepath)
 # 排除 11/12 的少量流量，統一將雙 11 當天作為最後一天
 df = df[df['time_stamp']<=1111]
 print('Shape of tmall web log dataset: ', df.shape)
@@ -127,18 +140,18 @@ user_list = sampled_user_with_agerange.user_id.unique()
 sampled_df = df[df['user_id'].isin(user_list)].sort_values('day_stamp').reset_index()
 sampled_df = sampled_df.drop(['index'], axis=1)
 # 儲存抽樣後用戶備用
-sampled_df.to_csv(folderpath + f'Tmall-sampledData_agerange-{produce_date}_{version}.csv', index=False)
+sampled_df.to_csv(preprocessed_folderpath + f'Tmall-sampledData_agerange-{produce_date}_{version}.csv', index=False)
 
 # 僅篩選抽樣用戶行為紀錄使用
 sampled_df = sampled_df[(sampled_df['day_stamp'] >= start_day) & (sampled_df['day_stamp'] <= end_day)]
 
 # 以字典儲存抽樣用戶的每日各項行為次數
 accum_by_timestamp = user_daily_behavior_todict(user_list=user_list, sampled_df=sampled_df, start_day=start_day, end_day=end_day)
-with open(folderpath + 'TMall_user_counts_{}_{}.json'.format(produce_date, version), 'w') as fp:
+with open(preprocessed_folderpath + 'TMall_user_counts_{}_{}.json'.format(produce_date, version), 'w') as fp:
     json.dump(accum_by_timestamp, fp)
 
 # 測試能否順利載入
-with open(folderpath + 'TMall_user_counts_{}_{}.json'.format(produce_date, version), 'r') as f:
+with open(preprocessed_folderpath + 'TMall_user_counts_{}_{}.json'.format(produce_date, version), 'r') as f:
     tmall_user_count_stats = json.load(f)
 print(tmall_user_count_stats.keys())
 
@@ -149,13 +162,28 @@ user_daily_states = user_daily_state_tolist(user_list=list(tmall_user_count_stat
 print(produce_date, version)
 columns = ['user_id'] + ['day_' + str(x) for x in range(start_day, end_day + 1)]
 user_states_table = pd.DataFrame(user_daily_states, columns=columns)
-user_states_table.to_csv(folderpath + output_filepath, index=False)
+user_states_table.to_csv(preprocessed_folderpath + state_sequence_output_filepath, index=False)
 print(user_states_table.head())
+
+# 計算每位用戶行為事件次數累計
+action_types = list(set(user_states_table.iloc[:, 1:user_states_table.shape[1]].values.reshape(-1)))
+seq_agg_count_list = user_states_table.iloc[:, 1:user_states_table.shape[1]].apply(count_action_num, axis=1).values
+for _id in range(0, len(seq_agg_count_list)):
+    if _id == 0:
+        df_action_agg = pd.DataFrame([seq_agg_count_list[_id]])
+    else:
+        df_action_agg = pd.concat([df_action_agg, pd.DataFrame([seq_agg_count_list[_id]])])
+        
+df_action_agg['user_id'] = user_states_table['user_id'].values
+df_action_agg = df_action_agg.reset_index().drop(['index'], axis=1)
+df_action_agg.to_csv(preprocessed_folderpath + action_count_output_filepath, index=False)
+print(df_action_agg.shape)
+print(df_action_agg.head())
 
 # 檢視用戶狀態分布比例
 states_count_dict = dict(Counter(user_states_table.iloc[:, 1:user_states_table.shape[1]].values.reshape(-1).tolist()))
 states_count_df = pd.DataFrame([list(states_count_dict.keys()), list(states_count_dict.values())]).T
 states_count_df.columns = ['action', 'count']
-states_count_df.to_csv(folderpath + f'TMall_user_state-count_{produce_date}_{version}.csv', index=False)
+states_count_df.to_csv(preprocessed_folderpath + f'TMall_user_state-count_{produce_date}_{version}.csv', index=False)
 print(states_count_df)
 

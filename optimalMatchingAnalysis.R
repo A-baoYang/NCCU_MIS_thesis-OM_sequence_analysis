@@ -1,18 +1,18 @@
-library("TraMineR")
-library("cluster")
-library("factoextra")
-library("NbClust")
+library('TraMineR')
+library('cluster')
+library('factoextra')
+library('NbClust')
 library('caret')
 library('RcmdrMisc')
 library('ggplot2')
 
 # Variables
 case_name = 'TMall'
-#case_name = 'Cainiao'
+case_name = 'Cainiao'
 preprocess_folderpath <- sprintf('%s/%s_preprocessed', case_name, case_name)
 output_folderpath <- sprintf('%s/%s_output', case_name, case_name)
-produce_date <- '20210625'
-start_day <- 0
+produce_date <- '20210715'
+start_day <- 178
 end_day <- 184
 label <- 'none'
 sent_day <- 10
@@ -22,6 +22,10 @@ sent_day <- 10
 if (case_name == 'TMall') {
   file_name <- sprintf('%s_V3.2-duration_%s_%s-label_%s', produce_date, start_day, end_day, label)
   data <- read.csv(sprintf('%s/TMall_user_state_sequence_table_%s.csv', preprocess_folderpath, file_name))
+  # Compare with traditional distance vector for clustering input
+  action_counts <- read.csv(sprintf('%s/action_counts-%s.csv', preprocess_folderpath, file_name))
+  # euclidean_distance <- read.csv(sprintf('%s/euclidean_distance-%s.csv', preprocess_folderpath, file_name))
+  # cosine_similarity <- read.csv(sprintf('%s/cosine_similarity-%s.csv', preprocess_folderpath, file_name))
   colorset <- c("gray", "forestgreen", "darkorange3", "green", "gold", "white")
 } else {
   file_name <- sprintf('%s-sentday_%s', produce_date, sent_day)
@@ -29,11 +33,8 @@ if (case_name == 'TMall') {
   colorset <- c("white","aquamarine3","azure1","azure2","dodgerblue1","aquamarine1","azure3","aquamarine4","green","green3")
 }
 
-# Check if missing values exist
-data[is.na(data)]
-
-# Sequence Formatting (!! Need to adjust the range x:xxx)
-data.seq <- seqdef(data, 2:184, xtstep=6)
+# Sequence format
+data.seq <- seqdef(data, 2:8, xtstep=6)
 
 # Transition rates between states
 data.trate <- round(seqtrate(data.seq, time.varying = FALSE), 2)
@@ -83,11 +84,6 @@ write.csv(data.om,
           row.names = FALSE)
 
 
-# Compare with traditional distance vector for clustering input
-action_counts <- read.csv(sprintf('%s/action_counts-%s.csv', preprocess_folderpath, file_name))
-euclidean_distance <- read.csv(sprintf('%s/euclidean_distance-%s.csv', preprocess_folderpath, file_name))
-cosine_similarity <- read.csv(sprintf('%s/cosine_similarity-%s.csv', preprocess_folderpath, file_name))
-
 # Find optimal number of clusters, method = "silhouette", "wss"
 fviz_nbclust(data.om, FUNcluster = hcut, method = "silhouette", k.max = 8, print.summary = TRUE)
 
@@ -97,6 +93,7 @@ clusterward <- agnes(action_counts, diss = FALSE, method = 'ward')
 # (2) With dissimilarity matrix
 clusterward <- agnes(data.om, diss = TRUE, method = 'ward')
 clusterward <- agnes(euclidean_distance, diss = TRUE, method = 'ward')
+
 cluster.result <- cutree(clusterward, k=8)
 cluster.label.hcut <- factor(cluster.result, labels = paste("Cluster"), 1:8)
 
@@ -113,24 +110,24 @@ euclidean_distance$hcut_cluster <- cluster.label.hcut
 euclidean_distance$kmeans_cluster <- cluster.label.kmeans
 write.csv(data, 
           sprintf('%s/clustered-%s-seqdist_%s-sm_%s-indel_%s-method_%s-center_%s.csv',
-                  output_folderpath, file_name, 'OMspell', 'TRATE', 'auto', 'kmeans', '2'), 
+                  output_folderpath, file_name, 'OMstran', 'TRATE', 'auto', 'hcut', '8'), 
           row.names = FALSE)
 write.csv(action_counts, 
           sprintf('%s/clustered-%s-seqdist_%s-method_%s-center_%s.csv',
-                  output_folderpath, file_name, 'action_counts', 'kmeans', '8'), 
+                  output_folderpath, file_name, 'action_counts', 'hcut', '8'), 
           row.names = FALSE)
 write.csv(euclidean_distance, 
           sprintf('%s/clustered-%s-seqdist_%s-method_%s-center_%s.csv',
-                  output_folderpath, file_name, 'euclidean_distance', 'kmeans', '8'), 
+                  output_folderpath, file_name, 'euclidean_distance', 'hcut', '8'), 
           row.names = FALSE)
 
 # Plots
 plot_name <- sprintf('%s/cluster_distribution-%s-seqdist_%s-sm_%s-indel_%s-method_%s-center_%s', 
-                     output_folderpath, file_name, 'OMspell', 'TRATE', 'auto', 'kmeans', '2')
+                     output_folderpath, file_name, 'OMstran', 'TRATE', 'auto', 'hcut', '8')
 plot_name
 
 # State distribution plot
-seqdplot(data.seq, group = cluster.label.kmeans, border=NA, cpal=colorset)
+seqdplot(data.seq, group = cluster.label.hcut, border=NA, cpal=colorset)
 seqfplot(data.seq, group = cluster.label.hcut, border=NA, cpal=colorset)
 seqiplot(data.seq, group = cluster.label.hcut, border=NA, cpal=colorset)
 seqIplot(data.seq, group = cluster.label.hcut, border=NA, cpal=colorset)
